@@ -1,0 +1,1644 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Executive Network P&L Dashboard | «Евгенич»</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Chart.js & DataLabels Plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+  
+  <!-- GridStack.js for Drag & Drop and Resizing -->
+  <link href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: {
+              card: '#111827',
+              border: '#1f2937',
+              muted: '#374151',
+              bg: '#0b0f19'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #111827; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+    
+    .grid-stack-item-content {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 0.75rem;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    .grid-stack > .grid-stack-item > .ui-resizable-handle {
+      background: none !important;
+      background-image: none !important;
+      opacity: 0 !important;
+    }
+    
+    .drag-handle {
+      cursor: grab;
+    }
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+  </style>
+</head>
+<body class="text-slate-100 min-h-screen antialiased flex flex-col custom-scrollbar">
+
+  <!-- HEADER -->
+  <header class="border-b border-surface-border bg-surface-card/90 backdrop-blur sticky top-0 z-40 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/20">
+        E
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-base font-semibold tracking-tight text-white">Караоке-рюмочная Евгенич</h1>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 font-medium border border-blue-500/20">COO Dashboard</span>
+        </div>
+        <p class="text-xs text-slate-400">Операционный дашборд сети • Live Data</p>
+      </div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="relative">
+        <select id="locFilter" onchange="applyFilters()" class="bg-surface-bg text-xs text-slate-200 border border-surface-border rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-blue-500 transition appearance-none cursor-pointer">
+          <option value="ALL">Вся сеть</option>
+        </select>
+        <span class="absolute right-2.5 top-2.5 pointer-events-none text-slate-400 text-xs">▼</span>
+      </div>
+
+      <div class="relative">
+        <select id="monthFilter" onchange="applyFilters()" class="bg-surface-bg text-xs text-slate-200 border border-surface-border rounded-lg px-3 py-2 pr-8 focus:outline-none focus:border-blue-500 transition appearance-none cursor-pointer">
+          <option value="">Загрузка...</option>
+        </select>
+        <span class="absolute right-2.5 top-2.5 pointer-events-none text-slate-400 text-xs">▼</span>
+      </div>
+
+      <button onclick="resetLayout()" class="px-3 py-2 rounded-lg border border-surface-border hover:bg-surface-muted text-slate-300 text-xs font-medium transition flex items-center gap-1.5" title="Сбросить расположение блоков">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Сброс сетки
+      </button>
+
+      <div id="syncStatus" class="flex items-center justify-center p-2 rounded-lg bg-surface-muted/40 border border-surface-border" title="Статус данных">
+        <span id="syncDot" class="h-2.5 w-2.5 rounded-full bg-slate-500 transition-colors duration-300"></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main class="flex-1 p-6 max-w-[1600px] w-full mx-auto space-y-6">
+
+    <!-- KPI ROW (FIXED) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- 1. Выручка -->
+      <div class="bg-surface-card border border-surface-border rounded-xl p-4 shadow-sm">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-medium uppercase tracking-wider text-slate-400">Выручка (ТО)</span>
+          <span id="kpiRevBadge" class="text-xs px-2 py-0.5 rounded font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">—</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiRevenue" class="text-2xl font-bold tracking-tight text-white">— ₽</span>
+        </div>
+        <div class="mt-3 text-xs text-slate-400 flex justify-between border-t border-surface-border/50 pt-2">
+          <span>Прошлый период:</span>
+          <span id="kpiRevPrev" class="font-medium text-slate-300">— ₽</span>
+        </div>
+      </div>
+
+      <!-- 2. Чистая прибыль (строка 18) -->
+      <div class="bg-surface-card border border-surface-border rounded-xl p-4 shadow-sm">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-medium uppercase tracking-wider text-slate-400">Чистая прибыль</span>
+          <span id="kpiProfitBadge" class="text-xs px-2 py-0.5 rounded font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">—</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiProfit" class="text-2xl font-bold tracking-tight text-emerald-400">— ₽</span>
+        </div>
+        <div class="mt-3 text-xs text-slate-400 flex justify-between border-t border-surface-border/50 pt-2">
+          <span>Рентабельность (ЧП):</span>
+          <span id="kpiMargin" class="font-bold text-white">— %</span>
+        </div>
+      </div>
+
+      <!-- 3. Себестоимость -->
+      <div class="bg-surface-card border border-surface-border rounded-xl p-4 shadow-sm">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-medium uppercase tracking-wider text-slate-400">Себестоимость</span>
+          <span id="kpiCostShare" class="text-xs px-2 py-0.5 rounded font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">— %</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiCostTotal" class="text-2xl font-bold tracking-tight text-white">— ₽</span>
+        </div>
+        <div class="mt-3 text-xs text-slate-400 flex justify-between border-t border-surface-border/50 pt-2">
+          <span id="kpiKitchenPct">Кухня: — %</span>
+          <span id="kpiBarPct">Бар: — %</span>
+        </div>
+      </div>
+
+      <!-- 4. ФОТ (Зарплата упр. строка 82) -->
+      <div class="bg-surface-card border border-surface-border rounded-xl p-4 shadow-sm">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-medium uppercase tracking-wider text-slate-400">ФОТ</span>
+          <span id="kpiFotShare" class="text-xs px-2 py-0.5 rounded font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">— %</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiFotTotal" class="text-2xl font-bold tracking-tight text-white">— ₽</span>
+        </div>
+        <div class="mt-3 text-xs text-slate-400 flex justify-between border-t border-surface-border/50 pt-2">
+          <span>Прошлый период:</span>
+          <span id="kpiFotPrevFull" class="font-medium text-slate-300">— ₽ (— %)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- DRAGGABLE / RESIZABLE GRIDSTACK CONTAINER -->
+    <div class="grid-stack">
+
+      <!-- 1. ДИНАМИКА ТО И РЕНТАБ (12 МЕСЯЦЕВ) -->
+      <div class="grid-stack-item" gs-id="card-trend" gs-x="0" gs-y="0" gs-w="8" gs-h="5" gs-min-w="4" gs-min-h="4">
+        <div class="grid-stack-item-content p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3 drag-handle pb-1 border-b border-surface-border/40">
+            <div>
+              <h2 class="text-sm font-bold text-white tracking-wide uppercase">Динамика ТО и Рентаб.</h2>
+              <p class="text-xs text-slate-400">Ретроспектива за последние 12 месяцев от выбранного месяца</p>
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+              <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-blue-500"></span> Выручка</div>
+              <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-400"></span> Рентабельность %</div>
+            </div>
+          </div>
+          <div class="flex-1 w-full min-h-0 relative">
+            <canvas id="trendChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. СТРУКТУРА ТО -->
+      <div class="grid-stack-item" gs-id="card-to" gs-x="8" gs-y="0" gs-w="4" gs-h="5" gs-min-w="3" gs-min-h="4">
+        <div class="grid-stack-item-content p-5">
+          <div class="flex items-center justify-between gap-2 mb-2 drag-handle pb-1 border-b border-surface-border/40">
+            <h2 class="text-sm font-bold text-white tracking-wide uppercase">Структура ТО</h2>
+          </div>
+          <div class="flex-1 w-full min-h-0 relative flex items-center justify-center my-auto">
+            <canvas id="toDoughnut"></canvas>
+          </div>
+          <div id="toLegend" class="mt-2 grid grid-cols-2 gap-2 text-[11px] border-t border-surface-border/50 pt-2">
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. ДИНАМИКА ВЫРУЧКИ И ЧП ПО БАРАМ -->
+      <div class="grid-stack-item" gs-id="card-yoy" gs-x="0" gs-y="5" gs-w="12" gs-h="6" gs-min-w="6" gs-min-h="4">
+        <div class="grid-stack-item-content p-5">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-3 drag-handle pb-1 border-b border-surface-border/40">
+            <div>
+              <h2 class="text-sm font-bold text-white tracking-wide uppercase">Динамика Выручки и Чистой Прибыли по барам</h2>
+            </div>
+
+            <!-- Мультиселект баров -->
+            <div class="relative no-drag" onclick="event.stopPropagation()">
+              <button id="yoyDropdownBtn" onclick="toggleYoyDropdown()" class="bg-surface-bg text-xs text-slate-200 border border-surface-border rounded-lg px-3 py-1.5 flex items-center gap-2 hover:border-blue-500 transition">
+                <span id="yoySelectedCountLabel">Выбраны все бары</span>
+                <span class="text-slate-400 text-xs">▼</span>
+              </button>
+
+              <div id="yoyDropdownMenu" class="hidden absolute right-0 mt-2 w-64 bg-surface-card border border-surface-border rounded-xl shadow-2xl p-3 z-50 space-y-2">
+                <div class="flex justify-between items-center pb-2 border-b border-surface-border text-xs">
+                  <span class="font-semibold text-slate-300">Локации сети</span>
+                  <div class="flex gap-2">
+                    <button onclick="selectAllYoyBars(true)" class="text-[10px] text-blue-400 hover:underline">Все</button>
+                    <button onclick="selectAllYoyBars(false)" class="text-[10px] text-slate-400 hover:underline">Сброс</button>
+                  </div>
+                </div>
+                <div id="yoyCheckboxesContainer" class="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar text-xs">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="flex-1 w-full min-h-0 relative">
+            <canvas id="yoyChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. РЕЙТИНГ ЛОКАЦИЙ -->
+      <div class="grid-stack-item" gs-id="card-benchmark" gs-x="0" gs-y="11" gs-w="8" gs-h="5" gs-min-w="5" gs-min-h="4">
+        <div class="grid-stack-item-content p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3 drag-handle pb-1 border-b border-surface-border/40">
+            <div>
+              <h2 class="text-sm font-bold text-white tracking-wide uppercase">Рейтинг локаций</h2>
+              <p class="text-xs text-slate-400">Сравнение товарооборота и рентабельности за выбранный месяц</p>
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+              <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-indigo-500"></span> Выручка</div>
+              <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-400"></span> Рентабельность %</div>
+            </div>
+          </div>
+          <div class="flex-1 w-full min-h-0 relative">
+            <canvas id="benchmarkChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. СТРУКТУРА РАСХОДОВ + ПОТЕРИ -->
+      <div class="grid-stack-item" gs-id="card-opex" gs-x="8" gs-y="11" gs-w="4" gs-h="5" gs-min-w="3" gs-min-h="4">
+        <div class="grid-stack-item-content p-5 flex flex-col justify-between">
+          <div class="mb-2 drag-handle pb-1 border-b border-surface-border/40">
+            <h2 class="text-sm font-bold text-white tracking-wide uppercase">Структура расходов</h2>
+          </div>
+          
+          <div class="flex-1 w-full min-h-0 relative my-2">
+            <canvas id="opexBarChart"></canvas>
+          </div>
+
+          <div class="border-t border-surface-border/60 pt-2 space-y-1.5">
+            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Индикаторы потерь сети</div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="bg-surface-bg/60 p-2 rounded border border-surface-border">
+                <span class="text-slate-400 block text-[9px]">Недостачи</span>
+                <span id="alertShortage" class="text-xs font-bold text-rose-400">— ₽</span>
+              </div>
+              <div class="bg-surface-bg/60 p-2 rounded border border-surface-border">
+                <span class="text-slate-400 block text-[9px]">Излишки</span>
+                <span id="alertSurplus" class="text-xs font-bold text-emerald-400">— ₽</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. FC И BC В ДИНАМИКЕ 7 МЕСЯЦЕВ (8 КОЛОНОК) -->
+      <div class="grid-stack-item" gs-id="card-fc-bc-trend" gs-x="0" gs-y="16" gs-w="8" gs-h="5" gs-min-w="4" gs-min-h="4">
+        <div class="grid-stack-item-content p-5">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-3 drag-handle pb-1 border-b border-surface-border/40">
+            <div>
+              <h2 class="text-sm font-bold text-white tracking-wide uppercase">Динамика FC и BC (7 месяцев)</h2>
+            </div>
+
+            <!-- Мультиселект баров для FC/BC -->
+            <div class="relative no-drag" onclick="event.stopPropagation()">
+              <button id="fcbcDropdownBtn" onclick="toggleFcbcDropdown()" class="bg-surface-bg text-xs text-slate-200 border border-surface-border rounded-lg px-3 py-1.5 flex items-center gap-2 hover:border-blue-500 transition">
+                <span id="fcbcSelectedCountLabel">Выбраны все бары</span>
+                <span class="text-slate-400 text-xs">▼</span>
+              </button>
+
+              <div id="fcbcDropdownMenu" class="hidden absolute right-0 mt-2 w-64 bg-surface-card border border-surface-border rounded-xl shadow-2xl p-3 z-50 space-y-2">
+                <div class="flex justify-between items-center pb-2 border-b border-surface-border text-xs">
+                  <span class="font-semibold text-slate-300">Локации сети</span>
+                  <div class="flex gap-2">
+                    <button onclick="selectAllFcbcBars(true)" class="text-[10px] text-blue-400 hover:underline">Все</button>
+                    <button onclick="selectAllFcbcBars(false)" class="text-[10px] text-slate-400 hover:underline">Сброс</button>
+                  </div>
+                </div>
+                <div id="fcbcCheckboxesContainer" class="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar text-xs">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="flex-1 w-full min-h-0 relative">
+            <canvas id="fcbcTrendChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. FC VS BC ПО БАРАМ (4 КОЛОНКИ) -->
+      <div class="grid-stack-item" gs-id="card-cost-benchmark" gs-x="8" gs-y="16" gs-w="4" gs-h="5" gs-min-w="3" gs-min-h="4">
+        <div class="grid-stack-item-content p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3 drag-handle pb-1 border-b border-surface-border/40">
+            <div>
+              <h2 class="text-sm font-bold text-white tracking-wide uppercase">FC vs BC по барам</h2>
+            </div>
+            <div class="flex items-center gap-2 text-[11px]">
+              <div class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-amber-500"></span> FC %</div>
+              <div class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-blue-500"></span> BC %</div>
+            </div>
+          </div>
+          <div class="flex-1 w-full min-h-0 relative">
+            <canvas id="costBenchmarkChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8. КУМУЛЯТИВНАЯ ЧИСТАЯ ПРИБЫЛЬ С АПРЕЛЯ 2025 ГОДА (СТРОКА 18) -->
+      <div class="grid-stack-item" gs-id="card-ytd-profit" gs-x="0" gs-y="21" gs-w="12" gs-h="5" gs-min-w="6" gs-min-h="4">
+        <div class="grid-stack-item-content p-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3 drag-handle pb-1 border-b border-surface-border/40">
+            <div>
+              <h2 class="text-sm font-bold text-white tracking-wide uppercase">Кумулятивная Чистая Прибыль сети</h2>
+              <p class="text-xs text-slate-400">Последовательное накопление ЧП с первого месяца работы сети</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="h-2.5 w-2.5 rounded-full bg-emerald-400"></span> Накопительная ЧП
+            </div>
+          </div>
+          <div class="flex-1 w-full min-h-0 relative">
+            <canvas id="ytdProfitChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <script>
+    Chart.defaults.animation = false;
+    Chart.register(ChartDataLabels);
+
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzYgf5Py9y-nsCixOPYffvM0ErkUdoE8-9JUtLVm__YvoZK975Le300ZKGPVfA-irA/exec";
+
+    const BAR_PALETTE = [
+      '#3b82f6', '#10b981', '#f59e0b', '#ec4899', 
+      '#8b5cf6', '#06b6d4', '#f97316', '#14b8a6', 
+      '#e11d48', '#84cc16', '#6366f1', '#d946ef'
+    ];
+
+    const DEFAULT_LAYOUT = [
+      { id: 'card-trend', x: 0, y: 0, w: 8, h: 5 },
+      { id: 'card-to', x: 8, y: 0, w: 4, h: 5 },
+      { id: 'card-yoy', x: 0, y: 5, w: 12, h: 6 },
+      { id: 'card-benchmark', x: 0, y: 11, w: 8, h: 5 },
+      { id: 'card-opex', x: 8, y: 11, w: 4, h: 5 },
+      { id: 'card-fc-bc-trend', x: 0, y: 16, w: 8, h: 5 },
+      { id: 'card-cost-benchmark', x: 8, y: 16, w: 4, h: 5 },
+      { id: 'card-ytd-profit', x: 0, y: 21, w: 12, h: 5 }
+    ];
+
+    let dbData = null;
+    let grid = null;
+    let trendChartInstance = null;
+    let toChartInstance = null;
+    let benchmarkChartInstance = null;
+    let opexChartInstance = null;
+    let yoyChartInstance = null;
+    let costBenchmarkInstance = null;
+    let fcbcTrendInstance = null;
+    let ytdProfitChartInstance = null;
+    
+    let selectedYoyBars = new Set();
+    let selectedFcbcBars = new Set();
+
+    const fmt = (num) => new Intl.NumberFormat('ru-RU').format(Math.round(num || 0)) + ' ₽';
+    const fmtPct = (num) => (num || 0).toFixed(1).replace('.', ',') + '%';
+
+    function setStatus(type) {
+      const dot = document.getElementById('syncDot');
+      const box = document.getElementById('syncStatus');
+      if (!dot || !box) return;
+
+      if (type === 'cache') {
+        dot.className = "h-2.5 w-2.5 rounded-full bg-slate-500";
+        box.title = "Загружено из кэша (память устройства)";
+      } else if (type === 'synced') {
+        dot.className = "h-2.5 w-2.5 rounded-full bg-emerald-400";
+        box.title = "Синхронизировано с Google Таблицей";
+      } else if (type === 'error') {
+        dot.className = "h-2.5 w-2.5 rounded-full bg-rose-500";
+        box.title = "Сбой соединения с Google Таблицей";
+      }
+    }
+
+    function initGridStack() {
+      grid = GridStack.init({
+        column: 12,
+        cellHeight: 75,
+        margin: 16,
+        handle: '.drag-handle',
+        animate: true,
+        resizable: {
+          handles: 'all'
+        }
+      });
+
+      const savedLayout = localStorage.getItem('evgenich_dashboard_layout_v8');
+      if (savedLayout) {
+        try {
+          grid.load(JSON.parse(savedLayout));
+        } catch (e) {
+          console.warn('Ошибка загрузки сетки:', e);
+        }
+      }
+
+      grid.on('change', () => {
+        const layout = grid.save(false);
+        localStorage.setItem('evgenich_dashboard_layout_v8', JSON.stringify(layout));
+        resizeAllCharts();
+      });
+
+      grid.on('resizestop', () => {
+        resizeAllCharts();
+      });
+    }
+
+    function resetLayout() {
+      localStorage.removeItem('evgenich_dashboard_layout_v8');
+      if (grid) {
+        grid.load(DEFAULT_LAYOUT);
+        resizeAllCharts();
+      }
+    }
+
+    function resizeAllCharts() {
+      setTimeout(() => {
+        if (trendChartInstance) trendChartInstance.resize();
+        if (toChartInstance) toChartInstance.resize();
+        if (yoyChartInstance) yoyChartInstance.resize();
+        if (benchmarkChartInstance) benchmarkChartInstance.resize();
+        if (opexChartInstance) opexChartInstance.resize();
+        if (costBenchmarkInstance) costBenchmarkInstance.resize();
+        if (fcbcTrendInstance) fcbcTrendInstance.resize();
+        if (ytdProfitChartInstance) ytdProfitChartInstance.resize();
+      }, 50);
+    }
+
+    function formatMonthStr(val) {
+      if (!val) return "";
+      let str = String(val).replace(/"/g, '').trim();
+
+      const shortRu = {
+        "янв": "Январь", "фев": "Февраль", "мар": "Март", "апр": "Апрель",
+        "мая": "Май", "май": "Май", "июн": "Июнь", "июл": "Июль",
+        "авг": "Август", "сен": "Сентябрь", "окт": "Октябрь", "ноя": "Ноябрь", "дек": "Декабрь"
+      };
+
+      for (let k in shortRu) {
+        if (str.toLowerCase().startsWith(k)) {
+          const match = str.match(/\d{2,4}/);
+          const y = match ? (match[0].length === 2 ? '20' + match[0] : match[0]) : '2026';
+          return shortRu[k] + ' ' + y;
+        }
+      }
+
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        const monthsRu = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        return monthsRu[d.getMonth()] + ' ' + d.getFullYear();
+      }
+
+      return str;
+    }
+
+    function cleanArticleName(name) {
+      if (!name) return "";
+      let s = String(name).trim();
+      s = s.replace(/^(Не\s*упр\.?|Упр\.?\s*Опер\.?|Упр\.?\s*Арт\.?)[,\s]*/i, '');
+      return s.trim();
+    }
+
+    async function loadLiveData() {
+      const cached = localStorage.getItem('evgenich_matrix_cache');
+      let cacheDataString = null;
+
+      if (cached) {
+        try {
+          cacheDataString = cached;
+          dbData = JSON.parse(cached);
+          selectedYoyBars = new Set(dbData.locations);
+          selectedFcbcBars = new Set(dbData.locations);
+
+          populateFilterDropdowns();
+          populateYoyCheckboxes();
+          populateFcbcCheckboxes();
+          applyFilters();
+
+          setStatus('cache');
+        } catch (e) {
+          console.warn('Ошибка чтения кэша:', e);
+        }
+      }
+
+      try {
+        const res = await fetch(APPS_SCRIPT_URL, { method: 'GET', redirect: 'follow' });
+        const data = await res.json();
+
+        if (data.status === "error") throw new Error(data.message);
+
+        const filteredLocs = (data.locations || []).filter(l => {
+          const norm = l.trim().toLowerCase();
+          return norm !== "все бары" && norm !== "всебары" && norm !== "все";
+        });
+
+        const formattedMonths = [];
+        const seenM = new Set();
+        (data.months || []).forEach(m => {
+          const cleanM = formatMonthStr(m);
+          if (cleanM && cleanM.toLowerCase() !== "месяц" && !seenM.has(cleanM)) {
+            seenM.add(cleanM);
+            formattedMonths.push({ raw: m, display: cleanM });
+          }
+        });
+
+        const normalizedRows = (data.pnlRows || []).map(r => ({
+          name: cleanArticleName(r.name),
+          rawValues: r.values || {}
+        })).filter(r => r.name && r.name !== "0");
+
+        const freshData = {
+          locations: filteredLocs,
+          months: formattedMonths,
+          rows: normalizedRows
+        };
+
+        const freshDataString = JSON.stringify(freshData);
+
+        if (freshDataString !== cacheDataString) {
+          dbData = freshData;
+          localStorage.setItem('evgenich_matrix_cache', freshDataString);
+
+          selectedYoyBars = new Set(filteredLocs);
+          selectedFcbcBars = new Set(filteredLocs);
+
+          populateFilterDropdowns();
+          populateYoyCheckboxes();
+          populateFcbcCheckboxes();
+          applyFilters();
+        }
+
+        setStatus('synced');
+
+      } catch (err) {
+        console.error("Ошибка загрузки:", err);
+        setStatus('error');
+      }
+    }
+
+    function populateFilterDropdowns() {
+      const locSelect = document.getElementById('locFilter');
+      const monthSelect = document.getElementById('monthFilter');
+
+      const prevLoc = locSelect.value;
+      const prevMonth = monthSelect.value;
+
+      locSelect.innerHTML = '<option value="ALL">Вся сеть (Сводно)</option>';
+      dbData.locations.forEach(loc => {
+        const opt = document.createElement('option');
+        opt.value = loc;
+        opt.textContent = loc;
+        locSelect.appendChild(opt);
+      });
+      if (prevLoc && dbData.locations.includes(prevLoc)) locSelect.value = prevLoc;
+
+      monthSelect.innerHTML = '';
+      dbData.months.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.raw;
+        opt.textContent = m.display;
+        monthSelect.appendChild(opt);
+      });
+
+      if (prevMonth && dbData.months.some(m => m.raw === prevMonth)) {
+        monthSelect.value = prevMonth;
+      } else if (dbData.months.length) {
+        monthSelect.value = dbData.months[0].raw;
+      }
+    }
+
+    function populateYoyCheckboxes() {
+      const container = document.getElementById('yoyCheckboxesContainer');
+      container.innerHTML = '';
+
+      dbData.locations.forEach((loc, idx) => {
+        const color = BAR_PALETTE[idx % BAR_PALETTE.length];
+        const label = document.createElement('label');
+        label.className = "flex items-center justify-between p-1.5 hover:bg-surface-muted/40 rounded cursor-pointer transition text-slate-200";
+
+        const left = document.createElement('div');
+        left.className = "flex items-center gap-2 truncate";
+
+        const cb = document.createElement('input');
+        cb.type = "checkbox";
+        cb.value = loc;
+        cb.checked = selectedYoyBars.has(loc);
+        cb.className = "rounded bg-surface-bg border-surface-border text-blue-600 focus:ring-0";
+        cb.onchange = (e) => {
+          if (e.target.checked) selectedYoyBars.add(loc);
+          else selectedYoyBars.delete(loc);
+          updateYoyCountLabel();
+          buildYoyChart();
+        };
+
+        const dot = document.createElement('span');
+        dot.className = "h-2 w-2 rounded-full flex-shrink-0";
+        dot.style.background = color;
+
+        const span = document.createElement('span');
+        span.textContent = loc.replace('ЕВ_', '');
+        span.className = "truncate text-xs";
+
+        left.appendChild(cb);
+        left.appendChild(dot);
+        left.appendChild(span);
+        label.appendChild(left);
+        container.appendChild(label);
+      });
+
+      updateYoyCountLabel();
+    }
+
+    function toggleYoyDropdown() {
+      document.getElementById('yoyDropdownMenu').classList.toggle('hidden');
+    }
+
+    function selectAllYoyBars(selectAll) {
+      const checkboxes = document.querySelectorAll('#yoyCheckboxesContainer input[type="checkbox"]');
+      selectedYoyBars.clear();
+      checkboxes.forEach(cb => {
+        cb.checked = selectAll;
+        if (selectAll) selectedYoyBars.add(cb.value);
+      });
+      updateYoyCountLabel();
+      buildYoyChart();
+    }
+
+    function updateYoyCountLabel() {
+      const count = selectedYoyBars.size;
+      const total = dbData.locations.length;
+      const label = document.getElementById('yoySelectedCountLabel');
+      if (count === total) label.textContent = "Выбраны все бары";
+      else if (count === 0) label.textContent = "Ничего не выбрано";
+      else label.textContent = `Выбрано: ${count} из ${total}`;
+    }
+
+    function populateFcbcCheckboxes() {
+      const container = document.getElementById('fcbcCheckboxesContainer');
+      container.innerHTML = '';
+
+      dbData.locations.forEach(loc => {
+        const label = document.createElement('label');
+        label.className = "flex items-center gap-2 p-1.5 hover:bg-surface-muted/40 rounded cursor-pointer transition text-slate-200";
+
+        const cb = document.createElement('input');
+        cb.type = "checkbox";
+        cb.value = loc;
+        cb.checked = selectedFcbcBars.has(loc);
+        cb.className = "rounded bg-surface-bg border-surface-border text-blue-600 focus:ring-0";
+        cb.onchange = (e) => {
+          if (e.target.checked) selectedFcbcBars.add(loc);
+          else selectedFcbcBars.delete(loc);
+          updateFcbcCountLabel();
+          buildFcbcTrendChart();
+        };
+
+        const span = document.createElement('span');
+        span.textContent = loc.replace('ЕВ_', '');
+        span.className = "truncate text-xs";
+
+        label.appendChild(cb);
+        label.appendChild(span);
+        container.appendChild(label);
+      });
+
+      updateFcbcCountLabel();
+    }
+
+    function toggleFcbcDropdown() {
+      document.getElementById('fcbcDropdownMenu').classList.toggle('hidden');
+    }
+
+    function selectAllFcbcBars(selectAll) {
+      const checkboxes = document.querySelectorAll('#fcbcCheckboxesContainer input[type="checkbox"]');
+      selectedFcbcBars.clear();
+      checkboxes.forEach(cb => {
+        cb.checked = selectAll;
+        if (selectAll) selectedFcbcBars.add(cb.value);
+      });
+      updateFcbcCountLabel();
+      buildFcbcTrendChart();
+    }
+
+    function updateFcbcCountLabel() {
+      const count = selectedFcbcBars.size;
+      const total = dbData.locations.length;
+      const label = document.getElementById('fcbcSelectedCountLabel');
+      if (count === total) label.textContent = "Выбраны все бары";
+      else if (count === 0) label.textContent = "Ничего не выбрано";
+      else label.textContent = `Выбрано: ${count} из ${total}`;
+    }
+
+    document.addEventListener('click', (e) => {
+      const yoyBtn = document.getElementById('yoyDropdownBtn');
+      const yoyMenu = document.getElementById('yoyDropdownMenu');
+      if (yoyBtn && yoyMenu && !yoyBtn.contains(e.target) && !yoyMenu.contains(e.target)) {
+        yoyMenu.classList.add('hidden');
+      }
+
+      const fcbcBtn = document.getElementById('fcbcDropdownBtn');
+      const fcbcMenu = document.getElementById('fcbcDropdownMenu');
+      if (fcbcBtn && fcbcMenu && !fcbcBtn.contains(e.target) && !fcbcMenu.contains(e.target)) {
+        fcbcMenu.classList.add('hidden');
+      }
+    });
+
+    function getVal(row, loc, rawMonth) {
+      if (!row || !row.rawValues) return 0;
+      if (loc === "ALL") {
+        let sum = 0;
+        dbData.locations.forEach(l => {
+          sum += (row.rawValues[l + "__" + rawMonth] || 0);
+        });
+        return sum;
+      }
+      return row.rawValues[loc + "__" + rawMonth] || 0;
+    }
+
+    // Точный захват строки 18 (Чистая прибыль)
+    function getProfitRow() {
+      let profitRow = dbData.rows.find(r => r.name.toUpperCase() === "ИТОГО ЧИСТАЯ ПРИБЫЛЬ" || r.name.toUpperCase() === "ЧИСТАЯ ПРИБЫЛЬ");
+      if (!profitRow) {
+        profitRow = dbData.rows.find(r => r.name.toUpperCase().includes("ЧИСТАЯ ПРИБЫЛЬ"));
+      }
+      return profitRow;
+    }
+
+    function applyFilters() {
+      if (!dbData || !dbData.rows.length) return;
+
+      const selLoc = document.getElementById('locFilter').value;
+      const selRawMonth = document.getElementById('monthFilter').value;
+
+      const monthIndex = dbData.months.findIndex(m => m.raw === selRawMonth);
+      const curMonthObj = dbData.months[monthIndex] || dbData.months[0];
+      const prevMonthObj = (monthIndex >= 0 && monthIndex + 1 < dbData.months.length) 
+        ? dbData.months[monthIndex + 1] 
+        : null;
+
+      // 1. Выручка общая
+      const revRow = dbData.rows.find(r => r.name.toUpperCase().trim() === "ВЫРУЧКА");
+      const revenue = getVal(revRow, selLoc, curMonthObj.raw);
+      const revPrev = prevMonthObj ? getVal(revRow, selLoc, prevMonthObj.raw) : 0;
+
+      document.getElementById('kpiRevenue').innerText = fmt(revenue);
+      document.getElementById('kpiRevPrev').innerText = fmt(revPrev);
+      const revDiff = revPrev > 0 ? ((revenue - revPrev) / revPrev) * 100 : 0;
+      document.getElementById('kpiRevBadge').innerText = `${revDiff >= 0 ? '+' : ''}${fmtPct(revDiff)} MoM`;
+
+      // 2. Чистая прибыль (строка 18)
+      const profitRow = getProfitRow();
+      const profit = getVal(profitRow, selLoc, curMonthObj.raw);
+      const profitPrev = prevMonthObj ? getVal(profitRow, selLoc, prevMonthObj.raw) : 0;
+      const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+
+      document.getElementById('kpiProfit').innerText = fmt(profit);
+      document.getElementById('kpiProfit').className = `text-2xl font-bold tracking-tight ${profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      document.getElementById('kpiMargin').innerText = fmtPct(margin);
+      const profitDiff = profitPrev !== 0 ? ((profit - profitPrev) / Math.abs(profitPrev)) * 100 : 0;
+      document.getElementById('kpiProfitBadge').innerText = `${profitDiff >= 0 ? '+' : ''}${fmtPct(profitDiff)} MoM`;
+
+      // 3. Себестоимость
+      let costRow = dbData.rows.find(r => {
+        const n = r.name.toLowerCase().trim();
+        return n === "итого себестоимость" || n === "себестоимость итого";
+      });
+      if (!costRow) {
+        costRow = dbData.rows.find(r => r.name.toLowerCase().trim() === "себестоимость");
+      }
+      const costTotal = getVal(costRow, selLoc, curMonthObj.raw);
+
+      const costKitchenRow = dbData.rows.find(r => {
+        const n = r.name.toLowerCase();
+        return n.includes("кухн") && (n.includes("реализ") || n.includes("себестоим"));
+      });
+      const costBarRow = dbData.rows.find(r => {
+        const n = r.name.toLowerCase();
+        return n.includes("бар") && (n.includes("реализ") || n.includes("себестоим"));
+      });
+
+      const revKitchenRow = dbData.rows.find(r => r.name.toLowerCase().includes("выручка кухня"));
+      const revBarRow = dbData.rows.find(r => r.name.toLowerCase().includes("выручка бар"));
+
+      const valCostKitchen = getVal(costKitchenRow, selLoc, curMonthObj.raw);
+      const valCostBar = getVal(costBarRow, selLoc, curMonthObj.raw);
+      const valRevKitchen = getVal(revKitchenRow, selLoc, curMonthObj.raw);
+      const valRevBar = getVal(revBarRow, selLoc, curMonthObj.raw);
+
+      const pctKitchen = valRevKitchen > 0 ? (valCostKitchen / valRevKitchen) * 100 : 0;
+      const pctBar = valRevBar > 0 ? (valCostBar / valRevBar) * 100 : 0;
+
+      document.getElementById('kpiCostTotal').innerText = fmt(costTotal);
+      document.getElementById('kpiCostShare').innerText = revenue > 0 ? fmtPct((costTotal / revenue) * 100) : '0%';
+      document.getElementById('kpiKitchenPct').innerText = `Кухня: ${fmtPct(pctKitchen)}`;
+      document.getElementById('kpiBarPct').innerText = `Бар: ${fmtPct(pctBar)}`;
+
+      // 4. ФОТ: "Зарплата упр." (строка 82)
+      const fotRow = dbData.rows.find(r => r.name.toLowerCase().includes("зарплата упр"));
+      const fotTotal = getVal(fotRow, selLoc, curMonthObj.raw);
+      const fotPrev = prevMonthObj ? getVal(fotRow, selLoc, prevMonthObj.raw) : 0;
+      const fotShare = revenue > 0 ? (fotTotal / revenue) * 100 : 0;
+      const fotPrevShare = revPrev > 0 ? (fotPrev / revPrev) * 100 : 0;
+
+      document.getElementById('kpiFotTotal').innerText = fmt(fotTotal);
+      document.getElementById('kpiFotShare').innerText = fmtPct(fotShare);
+      document.getElementById('kpiFotPrevFull').innerText = `${fmt(fotPrev)} (${fmtPct(fotPrevShare)})`;
+
+      // Потери
+      const shortageRow = dbData.rows.find(r => r.name.toLowerCase().includes("недостача кухня") || r.name.toLowerCase().includes("недостача"));
+      const surplusRow = dbData.rows.find(r => r.name.toLowerCase().includes("излишки кухня") || r.name.toLowerCase().includes("излишки"));
+      document.getElementById('alertShortage').innerText = fmt(getVal(shortageRow, selLoc, curMonthObj.raw));
+      document.getElementById('alertSurplus').innerText = fmt(getVal(surplusRow, selLoc, curMonthObj.raw));
+
+      // Отрисовка графиков
+      buildTwelveMonthTrend(selLoc, monthIndex);
+      buildTurnoverStructure(selLoc, curMonthObj.raw, revenue);
+      buildYoyChart();
+      buildBenchmarkChart(curMonthObj.raw);
+      buildOpexBreakdown(selLoc, curMonthObj.raw);
+      buildCostBenchmarkChart(curMonthObj.raw);
+      buildFcbcTrendChart();
+      buildYtdProfitChart(selLoc);
+    }
+
+    // 1. Динамика ТО и Рентаб (12 МЕСЯЦЕВ)
+    function buildTwelveMonthTrend(loc, curMonthIdx) {
+      const monthsPool = dbData.months;
+      const historyMonths = [];
+
+      for (let i = curMonthIdx + 11; i >= curMonthIdx; i--) {
+        if (i >= 0 && i < monthsPool.length) {
+          historyMonths.push(monthsPool[i]);
+        }
+      }
+
+      const labels = [];
+      const revenueData = [];
+      const marginData = [];
+
+      const revRow = dbData.rows.find(r => r.name.toUpperCase().trim() === "ВЫРУЧКА");
+      const profitRow = getProfitRow();
+
+      historyMonths.forEach(mObj => {
+        labels.push(mObj.display.replace(' 20', ' \''));
+        const rVal = getVal(revRow, loc, mObj.raw);
+        const pVal = getVal(profitRow, loc, mObj.raw);
+        const mVal = rVal > 0 ? (pVal / rVal) * 100 : 0;
+
+        revenueData.push(rVal);
+        marginData.push(Number(mVal.toFixed(1)));
+      });
+
+      const ctxTrend = document.getElementById('trendChart').getContext('2d');
+      if (trendChartInstance) trendChartInstance.destroy();
+
+      trendChartInstance = new Chart(ctxTrend, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Выручка (ТО)',
+              data: revenueData,
+              backgroundColor: 'rgba(59, 130, 246, 0.5)',
+              borderColor: '#3b82f6',
+              borderWidth: 1.5,
+              borderRadius: 4,
+              yAxisID: 'y',
+              datalabels: {
+                anchor: 'end',
+                align: 'top',
+                color: '#93c5fd',
+                font: { size: 9, weight: 'bold' },
+                formatter: (val) => val > 0 ? (val / 1000000).toFixed(1) + 'M' : ''
+              }
+            },
+            {
+              type: 'line',
+              label: 'Рентабельность',
+              data: marginData,
+              borderColor: '#34d399',
+              backgroundColor: '#34d399',
+              borderWidth: 2.5,
+              tension: 0.35,
+              pointRadius: 4,
+              yAxisID: 'yPct',
+              datalabels: {
+                anchor: 'center',
+                align: 'top',
+                offset: 5,
+                color: '#34d399',
+                font: { size: 10, weight: 'bold' },
+                formatter: (val) => val + '%'
+              }
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            datalabels: { display: true },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ctx.dataset.yAxisID === 'yPct' ? `Рентабельность: ${ctx.raw}%` : `Выручка: ${fmt(ctx.raw)}`
+              }
+            }
+          },
+          scales: {
+            x: { 
+              grid: { color: 'rgba(55, 65, 81, 0.3)' }, 
+              ticks: { color: '#94a3b8', maxRotation: 0, minRotation: 0, font: { size: 10 } } 
+            },
+            y: {
+              type: 'linear',
+              position: 'left',
+              grid: { color: 'rgba(55, 65, 81, 0.3)' },
+              ticks: { color: '#94a3b8', callback: (v) => (v / 1000000).toFixed(1) + 'M' },
+              suggestedMax: Math.max(...revenueData) * 1.18
+            },
+            yPct: {
+              type: 'linear',
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              ticks: { color: '#34d399', callback: (v) => v + '%' },
+              suggestedMax: Math.max(...marginData) * 1.25
+            }
+          }
+        }
+      });
+    }
+
+    // 2. Структура ТО
+    function buildTurnoverStructure(loc, rawMonth, totalRev) {
+      const toKeywords = [
+        { label: "Бар", match: "выручка бар" },
+        { label: "Кухня", match: "выручка кухня" },
+        { label: "Партнерка", match: "выручка партнерка" },
+        { label: "Услуги", match: "выручка услуги" },
+        { label: "Кальяны", match: "кальяны" },
+        { label: "Банкеты", match: "банкет" },
+        { label: "Доставка", match: "доставка" },
+        { label: "Концерты", match: "концерт" }
+      ];
+
+      const toItems = [];
+      toKeywords.forEach(item => {
+        const found = dbData.rows.find(r => r.name.toLowerCase().includes(item.match));
+        if (found) {
+          const val = getVal(found, loc, rawMonth);
+          if (val > 0) toItems.push({ label: item.label, val: val });
+        }
+      });
+
+      toItems.sort((a, b) => b.val - a.val);
+
+      const labels = toItems.map(i => i.label);
+      const dataVals = toItems.map(i => i.val);
+      const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#64748b'];
+
+      const ctxTO = document.getElementById('toDoughnut').getContext('2d');
+      if (toChartInstance) toChartInstance.destroy();
+
+      toChartInstance = new Chart(ctxTO, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: dataVals,
+            backgroundColor: colors.slice(0, labels.length),
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '70%',
+          plugins: {
+            legend: { display: false },
+            datalabels: {
+              color: '#ffffff',
+              font: { size: 10, weight: 'bold' },
+              formatter: (val) => {
+                const pct = totalRev > 0 ? (val / totalRev * 100) : 0;
+                return pct >= 9 ? pct.toFixed(0) + '%' : '';
+              }
+            }
+          }
+        }
+      });
+
+      const legendEl = document.getElementById('toLegend');
+      legendEl.innerHTML = toItems.map((item, idx) => {
+        const pct = totalRev > 0 ? (item.val / totalRev * 100).toFixed(1) : '0';
+        return `
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5 truncate">
+              <span class="h-2 w-2 rounded-full flex-shrink-0" style="background:${colors[idx % colors.length]}"></span>
+              <span class="text-slate-300 truncate">${item.label}</span>
+            </div>
+            <span class="text-slate-400 font-medium">${pct}%</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 3. Динамика Выручки и ЧП (ОТДЕЛЬНЫЕ ЛИНИИ)
+    function buildYoyChart() {
+      if (!dbData || !dbData.months.length) return;
+
+      const revRow = dbData.rows.find(r => r.name.toUpperCase().trim() === "ВЫРУЧКА");
+      const profitRow = getProfitRow();
+      const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
+      const monthObjs = [];
+      monthNames.forEach(mName => {
+        const target = `${mName} 2026`;
+        const found = dbData.months.find(m => m.display === target);
+        if (found) {
+          monthObjs.push({ label: mName.substring(0, 3), raw: found.raw });
+        }
+      });
+
+      const xLabels = monthObjs.map(m => m.label);
+      const datasets = [];
+
+      let colorIdx = 0;
+      dbData.locations.forEach(loc => {
+        if (selectedYoyBars.has(loc)) {
+          const color = BAR_PALETTE[colorIdx % BAR_PALETTE.length];
+          const cleanBarName = loc.replace('ЕВ_', '');
+
+          const revData = monthObjs.map(m => revRow?.rawValues[loc + "__" + m.raw] || 0);
+          const profitData = monthObjs.map(m => profitRow?.rawValues[loc + "__" + m.raw] || 0);
+
+          datasets.push({
+            label: `${cleanBarName} (Выручка)`,
+            data: revData,
+            borderColor: color,
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            pointRadius: 3.5,
+            pointBackgroundColor: color,
+            tension: 0.3,
+            yAxisID: 'y'
+          });
+
+          datasets.push({
+            label: `${cleanBarName} (ЧП)`,
+            data: profitData,
+            borderColor: color,
+            backgroundColor: 'transparent',
+            borderWidth: 1.8,
+            borderDash: [5, 4],
+            pointRadius: 3,
+            pointBackgroundColor: color,
+            tension: 0.3,
+            yAxisID: 'yProfit'
+          });
+
+          colorIdx++;
+        }
+      });
+
+      const ctxYoy = document.getElementById('yoyChart').getContext('2d');
+      if (yoyChartInstance) yoyChartInstance.destroy();
+
+      yoyChartInstance = new Chart(ctxYoy, {
+        type: 'line',
+        data: {
+          labels: xLabels,
+          datasets: datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top',
+              labels: {
+                color: '#94a3b8',
+                boxWidth: 26,
+                boxHeight: 2,
+                usePointStyle: false,
+                font: { size: 10 }
+              }
+            },
+            datalabels: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${fmt(ctx.raw)}`
+              }
+            }
+          },
+          scales: {
+            x: { 
+              grid: { color: 'rgba(55, 65, 81, 0.3)' }, 
+              ticks: { color: '#94a3b8', maxRotation: 0, minRotation: 0 } 
+            },
+            y: {
+              type: 'linear',
+              position: 'left',
+              grid: { color: 'rgba(55, 65, 81, 0.3)' },
+              ticks: { color: '#94a3b8', callback: (v) => (v / 1000000).toFixed(1) + 'M' }
+            },
+            yProfit: {
+              type: 'linear',
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              ticks: { color: '#34d399', callback: (v) => (v / 1000000).toFixed(1) + 'M' }
+            }
+          }
+        }
+      });
+    }
+
+    // 4. Рейтинг локаций
+    function buildBenchmarkChart(rawMonth) {
+      const revRow = dbData.rows.find(r => r.name.toUpperCase().trim() === "ВЫРУЧКА");
+      const profitRow = getProfitRow();
+
+      const barStats = [];
+      dbData.locations.forEach(loc => {
+        const r = getVal(revRow, loc, rawMonth);
+        const p = getVal(profitRow, loc, rawMonth);
+        const m = r > 0 ? (p / r) * 100 : 0;
+        if (r > 0) {
+          barStats.push({ loc: loc, revenue: r, margin: Number(m.toFixed(1)) });
+        }
+      });
+
+      barStats.sort((a, b) => b.revenue - a.revenue);
+
+      const labels = barStats.map(b => b.loc.replace('ЕВ_', ''));
+      const revs = barStats.map(b => b.revenue);
+      const margins = barStats.map(b => b.margin);
+
+      const ctxBench = document.getElementById('benchmarkChart').getContext('2d');
+      if (benchmarkChartInstance) benchmarkChartInstance.destroy();
+
+      benchmarkChartInstance = new Chart(ctxBench, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Выручка (ТО)',
+              data: revs,
+              backgroundColor: 'rgba(99, 102, 241, 0.6)',
+              borderColor: '#6366f1',
+              borderWidth: 1.5,
+              borderRadius: 4,
+              yAxisID: 'y',
+              datalabels: {
+                anchor: 'end',
+                align: 'top',
+                color: '#a5b4fc',
+                font: { size: 10, weight: 'bold' },
+                formatter: (val) => (val / 1000000).toFixed(1) + 'M'
+              }
+            },
+            {
+              type: 'line',
+              label: 'Рентабельность %',
+              data: margins,
+              borderColor: '#34d399',
+              backgroundColor: '#34d399',
+              borderWidth: 2.5,
+              pointRadius: 4,
+              yAxisID: 'yPct',
+              datalabels: {
+                anchor: 'center',
+                align: 'top',
+                offset: 5,
+                color: '#34d399',
+                font: { size: 11, weight: 'bold' },
+                formatter: (val) => val + '%'
+              }
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            datalabels: { display: true },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ctx.dataset.yAxisID === 'yPct' ? `Рентабельность: ${ctx.raw}%` : `Выручка: ${fmt(ctx.raw)}`
+              }
+            }
+          },
+          scales: {
+            x: { 
+              grid: { color: 'rgba(55, 65, 81, 0.3)' }, 
+              ticks: { color: '#94a3b8', maxRotation: 0, minRotation: 0 } 
+            },
+            y: {
+              type: 'linear',
+              position: 'left',
+              grid: { color: 'rgba(55, 65, 81, 0.3)' },
+              ticks: { color: '#94a3b8', callback: (v) => (v / 1000000).toFixed(1) + 'M' },
+              suggestedMax: Math.max(...revs) * 1.18
+            },
+            yPct: {
+              type: 'linear',
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              ticks: { color: '#34d399', callback: (v) => v + '%' }
+            }
+          }
+        }
+      });
+    }
+
+    // 5. Структура расходов
+    function buildOpexBreakdown(loc, rawMonth) {
+      const getCostByMatch = (pattern) => {
+        const found = dbData.rows.find(r => r.name.toLowerCase().includes(pattern));
+        return found ? getVal(found, loc, rawMonth) : 0;
+      };
+
+      const fotVal = getCostByMatch("зарплата упр");
+
+      const costData = [
+        { label: "Себес.", val: getCostByMatch("итого себестоимость") || getCostByMatch("себестоимость") },
+        { label: "ФОТ", val: fotVal },
+        { label: "Тех.", val: getCostByMatch("итого обслуживание помещений") || getCostByMatch("аренда помещения") },
+        { label: "АРТ", val: getCostByMatch("итого расходы на артпрограмму") || getCostByMatch("артпрограмма") },
+        { label: "Реклама", val: getCostByMatch("итого расходы на рекламу") },
+        { label: "Налоги", val: getCostByMatch("итого налоги") }
+      ];
+
+      const labels = costData.map(c => c.label);
+      const values = costData.map(c => c.val);
+
+      const ctxOpex = document.getElementById('opexBarChart').getContext('2d');
+      if (opexChartInstance) opexChartInstance.destroy();
+
+      opexChartInstance = new Chart(ctxOpex, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: values,
+            backgroundColor: ['#f59e0b', '#3b82f6', '#6366f1', '#ec4899', '#8b5cf6', '#10b981'],
+            borderRadius: 4,
+            datalabels: {
+              anchor: 'end',
+              align: 'top',
+              color: '#94a3b8',
+              font: { size: 9, weight: 'bold' },
+              formatter: (val) => val > 0 ? (val / 1000000).toFixed(1) + 'M' : ''
+            }
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            datalabels: { display: true },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.label}: ${fmt(ctx.raw)}`
+              }
+            }
+          },
+          scales: {
+            x: { 
+              grid: { display: false }, 
+              ticks: { color: '#94a3b8', font: { size: 10 }, maxRotation: 0, minRotation: 0 } 
+            },
+            y: {
+              grid: { color: 'rgba(55, 65, 81, 0.2)' },
+              ticks: { display: false },
+              suggestedMax: Math.max(...values) * 1.2
+            }
+          }
+        }
+      });
+    }
+
+    // 6. Food Cost vs Bev Cost по барам
+    function buildCostBenchmarkChart(rawMonth) {
+      const costKitchenRow = dbData.rows.find(r => r.name.toLowerCase().includes("кухн") && (r.name.toLowerCase().includes("реализ") || r.name.toLowerCase().includes("себестоим")));
+      const costBarRow = dbData.rows.find(r => r.name.toLowerCase().includes("бар") && (r.name.toLowerCase().includes("реализ") || r.name.toLowerCase().includes("себестоим")));
+      const revKitchenRow = dbData.rows.find(r => r.name.toLowerCase().includes("выручка кухня"));
+      const revBarRow = dbData.rows.find(r => r.name.toLowerCase().includes("выручка бар"));
+
+      const labels = [];
+      const foodPcts = [];
+      const bevPcts = [];
+
+      dbData.locations.forEach(loc => {
+        const cK = getVal(costKitchenRow, loc, rawMonth);
+        const cB = getVal(costBarRow, loc, rawMonth);
+        const rK = getVal(revKitchenRow, loc, rawMonth);
+        const rB = getVal(revBarRow, loc, rawMonth);
+
+        if (rK > 0 || rB > 0) {
+          labels.push(loc.replace('ЕВ_', ''));
+          foodPcts.push(rK > 0 ? Number(((cK / rK) * 100).toFixed(1)) : 0);
+          bevPcts.push(rB > 0 ? Number(((cB / rB) * 100).toFixed(1)) : 0);
+        }
+      });
+
+      const ctxCost = document.getElementById('costBenchmarkChart').getContext('2d');
+      if (costBenchmarkInstance) costBenchmarkInstance.destroy();
+
+      costBenchmarkInstance = new Chart(ctxCost, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Food Cost %',
+              data: foodPcts,
+              backgroundColor: '#f59e0b',
+              borderRadius: 4,
+              datalabels: {
+                anchor: 'end',
+                align: 'top',
+                color: '#fcd34d',
+                font: { size: 9, weight: 'bold' },
+                formatter: (v) => v > 0 ? v + '%' : ''
+              }
+            },
+            {
+              label: 'Bev Cost %',
+              data: bevPcts,
+              backgroundColor: '#3b82f6',
+              borderRadius: 4,
+              datalabels: {
+                anchor: 'end',
+                align: 'top',
+                color: '#93c5fd',
+                font: { size: 9, weight: 'bold' },
+                formatter: (v) => v > 0 ? v + '%' : ''
+              }
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            datalabels: { display: true },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${ctx.raw}%`
+              }
+            }
+          },
+          scales: {
+            x: { 
+              grid: { color: 'rgba(55, 65, 81, 0.3)' }, 
+              ticks: { color: '#94a3b8', maxRotation: 0, minRotation: 0, font: { size: 10 } } 
+            },
+            y: {
+              grid: { color: 'rgba(55, 65, 81, 0.3)' },
+              ticks: { color: '#94a3b8', callback: (v) => v + '%' },
+              suggestedMax: Math.max(...foodPcts, ...bevPcts) * 1.25
+            }
+          }
+        }
+      });
+    }
+
+    // 7. FC и BC в динамике 7 месяцев
+    function buildFcbcTrendChart() {
+      if (!dbData || !dbData.months.length) return;
+
+      const selRawMonth = document.getElementById('monthFilter').value;
+      const curMonthIdx = dbData.months.findIndex(m => m.raw === selRawMonth);
+      const startIdx = curMonthIdx >= 0 ? curMonthIdx : 0;
+
+      const historyMonths = [];
+      for (let i = startIdx + 6; i >= startIdx; i--) {
+        if (i >= 0 && i < dbData.months.length) {
+          historyMonths.push(dbData.months[i]);
+        }
+      }
+
+      const costKitchenRow = dbData.rows.find(r => r.name.toLowerCase().includes("кухн") && (r.name.toLowerCase().includes("реализ") || r.name.toLowerCase().includes("себестоим")));
+      const costBarRow = dbData.rows.find(r => r.name.toLowerCase().includes("бар") && (r.name.toLowerCase().includes("реализ") || r.name.toLowerCase().includes("себестоим")));
+      const revKitchenRow = dbData.rows.find(r => r.name.toLowerCase().includes("выручка кухня"));
+      const revBarRow = dbData.rows.find(r => r.name.toLowerCase().includes("выручка бар"));
+
+      const labels = [];
+      const fcHistory = [];
+      const bcHistory = [];
+
+      historyMonths.forEach(mObj => {
+        labels.push(mObj.display);
+
+        let sumCostKitchen = 0;
+        let sumCostBar = 0;
+        let sumRevKitchen = 0;
+        let sumRevBar = 0;
+
+        selectedFcbcBars.forEach(bar => {
+          sumCostKitchen += (costKitchenRow?.rawValues[bar + "__" + mObj.raw] || 0);
+          sumCostBar += (costBarRow?.rawValues[bar + "__" + mObj.raw] || 0);
+          sumRevKitchen += (revKitchenRow?.rawValues[bar + "__" + mObj.raw] || 0);
+          sumRevBar += (revBarRow?.rawValues[bar + "__" + mObj.raw] || 0);
+        });
+
+        const fcPct = sumRevKitchen > 0 ? Number(((sumCostKitchen / sumRevKitchen) * 100).toFixed(1)) : 0;
+        const bcPct = sumRevBar > 0 ? Number(((sumCostBar / sumRevBar) * 100).toFixed(1)) : 0;
+
+        fcHistory.push(fcPct);
+        bcHistory.push(bcPct);
+      });
+
+      const ctxFcbc = document.getElementById('fcbcTrendChart').getContext('2d');
+      if (fcbcTrendInstance) fcbcTrendInstance.destroy();
+
+      fcbcTrendInstance = new Chart(ctxFcbc, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Food Cost %',
+              data: fcHistory,
+              borderColor: '#f59e0b',
+              backgroundColor: 'transparent',
+              borderWidth: 3,
+              pointRadius: 5,
+              pointBackgroundColor: '#f59e0b',
+              tension: 0.35,
+              datalabels: {
+                anchor: 'center',
+                align: 'top',
+                offset: 5,
+                color: '#fcd34d',
+                font: { size: 10, weight: 'bold' },
+                formatter: (val) => val > 0 ? val + '%' : ''
+              }
+            },
+            {
+              label: 'Bev Cost %',
+              data: bcHistory,
+              borderColor: '#3b82f6',
+              backgroundColor: 'transparent',
+              borderWidth: 3,
+              pointRadius: 5,
+              pointBackgroundColor: '#3b82f6',
+              tension: 0.35,
+              datalabels: {
+                anchor: 'center',
+                align: 'bottom',
+                offset: 5,
+                color: '#93c5fd',
+                font: { size: 10, weight: 'bold' },
+                formatter: (val) => val > 0 ? val + '%' : ''
+              }
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top',
+              labels: {
+                color: '#94a3b8',
+                boxWidth: 24,
+                boxHeight: 2,
+                usePointStyle: false,
+                font: { size: 11 }
+              }
+            },
+            datalabels: { display: true },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${ctx.raw}%`
+              }
+            }
+          },
+          scales: {
+            x: { 
+              grid: { color: 'rgba(55, 65, 81, 0.3)' }, 
+              ticks: { color: '#94a3b8', maxRotation: 0, minRotation: 0 } 
+            },
+            y: {
+              grid: { color: 'rgba(55, 65, 81, 0.3)' },
+              ticks: { color: '#94a3b8', callback: (v) => v + '%' },
+              suggestedMax: Math.max(...fcHistory, ...bcHistory) * 1.25
+            }
+          }
+        }
+      });
+    }
+
+    // =========================================================================
+    // 8. КУМУЛЯТИВНАЯ ЧИСТАЯ ПРИБЫЛЬ С АПРЕЛЯ 2025 ГОДА (СТРОКА 18 БД)
+    // =========================================================================
+    function buildYtdProfitChart(loc) {
+      if (!dbData || !dbData.months.length) return;
+
+      const profitRow = getProfitRow();
+      
+      // Ищем индекс "Апрель 2025" в массиве месяцев
+      const apr2025Idx = dbData.months.findIndex(m => m.display.toLowerCase().includes("апрель 2025"));
+      const endIdx = (apr2025Idx >= 0) ? apr2025Idx : (dbData.months.length - 1);
+
+      // Массив месяцев отсортирован от свежих к старым.
+      // Берем все месяцы от текущего (0) до Апреля 2025 (endIdx) и разворачиваем в прямом хронологическом порядке:
+      const chronologicalMonths = dbData.months.slice(0, endIdx + 1).reverse();
+
+      const labels = [];
+      const cumProfitData = [];
+      let runningCumulative = 0;
+
+      chronologicalMonths.forEach(mObj => {
+        // Подпись оси: "Апр '25", "Май '25", "Янв '26" и т.д.
+        const parts = mObj.display.split(' ');
+        const shortName = parts[0].substring(0, 3);
+        const shortYear = parts[1] ? '\'' + parts[1].substring(2) : '';
+        labels.push(`${shortName} ${shortYear}`);
+
+        const monthFact = getVal(profitRow, loc, mObj.raw);
+        runningCumulative += monthFact;
+        cumProfitData.push(runningCumulative);
+      });
+
+      const ctxYtd = document.getElementById('ytdProfitChart').getContext('2d');
+      if (ytdProfitChartInstance) ytdProfitChartInstance.destroy();
+
+      ytdProfitChartInstance = new Chart(ctxYtd, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Кумулятивная ЧП',
+              data: cumProfitData,
+              borderColor: '#34d399',
+              backgroundColor: 'rgba(52, 211, 153, 0.18)',
+              fill: true,
+              borderWidth: 3,
+              pointRadius: 4.5,
+              pointBackgroundColor: '#34d399',
+              tension: 0.3,
+              datalabels: {
+                anchor: 'end',
+                align: 'top',
+                offset: 4,
+                color: '#34d399',
+                font: { size: 9, weight: 'bold' },
+                formatter: (v) => v !== null ? (v / 1000000).toFixed(1) + 'M' : ''
+              }
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            datalabels: { display: true },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `Накопительный итог ЧП: ${fmt(ctx.raw)}`
+              }
+            }
+          },
+          scales: {
+            x: { 
+              grid: { color: 'rgba(55, 65, 81, 0.3)' }, 
+              ticks: { color: '#94a3b8', maxRotation: 0, minRotation: 0, font: { size: 10 } } 
+            },
+            y: {
+              grid: { color: 'rgba(55, 65, 81, 0.3)' },
+              ticks: { color: '#94a3b8', callback: (v) => (v / 1000000).toFixed(1) + 'M' },
+              suggestedMax: Math.max(...cumProfitData) * 1.18
+            }
+          }
+        }
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initGridStack();
+      loadLiveData();
+    });
+  </script>
+</body>
+</html>
